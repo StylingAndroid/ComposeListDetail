@@ -3,6 +3,7 @@ package com.stylingandroid.compose.listdetail
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -14,10 +15,7 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -35,10 +33,63 @@ class MainActivity : ComponentActivity() {
             ComposeListDetailTheme {
                 Surface(color = MaterialTheme.colors.background) {
                     @Suppress("MagicNumber")
-                    DynamicLayout(
+                    ListDetailLayout(
                         (1..10).map { index -> "Item $index" },
                         LocalConfiguration.current
-                    )
+                    ) {
+                        List { list, onSelectionChange ->
+                            MyList(list, onSelectionChange)
+                        }
+                        Detail { text ->
+                            Text(text = text)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private object NavGraph {
+    sealed class Route(val route: String) {
+        object Detail : Route("detail/{selected}") {
+            fun navigateRoute(selected: String?) = "detail/$selected"
+        }
+    }
+}
+
+@Composable
+@Suppress("MagicNumber")
+fun ListDetailLayout(
+    list: List<String>,
+    configuration: Configuration,
+    scope: @Composable TwoPaneScope<String>.() -> Unit
+) {
+    val isSmallScreen = configuration.smallestScreenWidthDp < 580
+    val navController = rememberNavController()
+    val twoPaneScope = TwoPaneScopeImpl(list).apply { scope() }
+
+    NavHost(navController = navController, startDestination = NavGraph.Route.Detail.route) {
+        composable(NavGraph.Route.Detail.route) { navBackStackEntry ->
+            val selected = navBackStackEntry.arguments?.getString("selected")
+            if (isSmallScreen) {
+                TwoPageLayout(twoPaneScope, selected) { selection ->
+                    navController.navigate(route = NavGraph.Route.Detail.navigateRoute(selection)) {
+                        popUpTo(NavGraph.Route.Detail.navigateRoute(null)) {
+                            inclusive = true
+                        }
+                    }
+                }
+                BackHandler(true) {
+                    navController.popBackStack()
+                }
+            } else {
+                SplitLayout(twoPaneScope, selected) { selection ->
+                    navController.navigate(route = NavGraph.Route.Detail.navigateRoute(selection)) {
+                        popUpTo(NavGraph.Route.Detail.route) {
+                            inclusive = true
+                        }
+                    }
                 }
             }
         }
@@ -46,64 +97,44 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-@Suppress("MagicNumber")
-fun DynamicLayout(
-    list: List<String>,
-    configuration: Configuration
+private fun TwoPageLayout(
+    twoPaneScope: TwoPaneScopeImpl<String>,
+    selected: String?,
+    onSelectionChange: (String) -> Unit
 ) {
-    if (configuration.smallestScreenWidthDp < 580) {
-        TwoPageLayout(list)
-    } else {
-        SplitLayout(list)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        if (selected == null) {
+            twoPaneScope.list(twoPaneScope.items, onSelectionChange)
+        } else {
+            twoPaneScope.detail(selected)
+        }
     }
 }
 
 @Composable
-fun SplitLayout(list: List<String>) {
-    var selected by rememberSaveable { mutableStateOf("") }
-
+private fun SplitLayout(
+    twoPaneScope: TwoPaneScopeImpl<String>,
+    selected: String?,
+    onSelectionChange: (String) -> Unit
+) {
     Row(Modifier.fillMaxWidth()) {
         Box(modifier = Modifier.weight(1f)) {
-            List(list = list) { newSelection ->
-                selected = newSelection
-            }
+            twoPaneScope.list(twoPaneScope.items, onSelectionChange)
         }
         Box(modifier = Modifier.weight(1f)) {
-            Detail(text = selected)
+            twoPaneScope.detail(selected ?: "Nothing selected")
         }
     }
 }
 
 @Composable
-fun TwoPageLayout(list: List<String>) {
-    val navController = rememberNavController()
-    val detailRoute = NavGraph.Route.Detail
-    NavHost(navController = navController, startDestination = "list") {
-        composable(route = NavGraph.Route.List.route) {
-            List(list = list) { selected ->
-                navController.navigate(route = detailRoute.navigateRoute(selected))
-            }
-        }
-        composable(route = detailRoute.route) { backStackEntry ->
-            Detail(text = backStackEntry.arguments?.getString("selected") ?: "")
-        }
-    }
-}
-
-private object NavGraph {
-    sealed class Route(val route: String) {
-        object List : Route("list")
-        object Detail : Route("detail/{selected}") {
-            fun navigateRoute(selected: String) = "detail/$selected"
-        }
-    }
-}
-
-@Composable
-fun List(list: List<String>, onSelectionChange: (String) -> Unit) {
-    LazyColumn() {
+private fun MyList(
+    list: List<String>,
+    onSelectionChange: (String) -> Unit
+) {
+    LazyColumn {
         for (entry in list) {
-            item() {
+            item {
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -117,7 +148,34 @@ fun List(list: List<String>, onSelectionChange: (String) -> Unit) {
     }
 }
 
-@Composable
-fun Detail(text: String) {
-    Text(text = text)
+@Immutable
+interface TwoPaneScope<T> {
+    val list: @Composable (List<T>, (T) -> Unit) -> Unit
+    val detail: @Composable (T) -> Unit
+
+    @Composable
+    fun List(newList: @Composable (List<T>, (T) -> Unit) -> Unit)
+
+    @Composable
+    fun Detail(newDetail: @Composable (T) -> Unit)
+}
+
+private class TwoPaneScopeImpl<T>(
+    val items: List<T>
+) : TwoPaneScope<T> {
+    override var list: @Composable (List<T>, (T) -> Unit) -> Unit = { _, _ -> }
+        private set
+
+    override var detail: @Composable (T) -> Unit = {}
+        private set
+
+    @Composable
+    override fun List(newList: @Composable (List<T>, (T) -> Unit) -> Unit) {
+        list = newList
+    }
+
+    @Composable
+    override fun Detail(newDetail: @Composable (T) -> Unit) {
+        detail = newDetail
+    }
 }
