@@ -51,6 +51,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.androidx.activity)
+    implementation(libs.androidx.window)
     implementation(libs.bundles.androidx.compose)
 }
 

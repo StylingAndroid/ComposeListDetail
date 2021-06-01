@@ -10,24 +10,71 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.util.Consumer
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.window.FoldingFeature
+import androidx.window.WindowLayoutInfo
+import androidx.window.WindowManager
 import com.stylingandroid.compose.listdetail.ui.theme.ComposeListDetailTheme
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.sendBlocking
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.collect
 
 class MainActivity : ComponentActivity() {
 
+    private lateinit var windowStateJob: Job
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun windowStateFlow(): Flow<WindowLayoutInfo> =
+        callbackFlow<WindowLayoutInfo> {
+            val windowManager = WindowManager(this@MainActivity)
+            val consumer = Consumer<WindowLayoutInfo> { newLayoutInfo ->
+                sendBlocking(newLayoutInfo)
+            }
+            windowManager.registerLayoutChangeCallback(
+                executor = ContextCompat.getMainExecutor(this@MainActivity),
+                callback = consumer
+            )
+            awaitClose {
+                windowManager.unregisterLayoutChangeCallback(consumer)
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        var windowState by mutableStateOf(WindowLayoutInfo.Builder().build())
+
+        windowStateJob = lifecycleScope.launchWhenStarted {
+            windowStateFlow()
+                .collect { windowLayoutInfo ->
+                    windowState = windowLayoutInfo
+                }
+        }
 
         setContent {
             ComposeListDetailTheme {
@@ -35,7 +82,8 @@ class MainActivity : ComponentActivity() {
                     @Suppress("MagicNumber")
                     ListDetailLayout(
                         (1..10).map { index -> "Item $index" },
-                        LocalConfiguration.current
+                        LocalConfiguration.current,
+                        windowState
                     ) {
                         List { list, onSelectionChange ->
                             MyList(list, onSelectionChange)
@@ -47,6 +95,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        windowStateJob.cancel()
+        super.onStop()
     }
 }
 
@@ -63,6 +116,7 @@ private object NavGraph {
 fun ListDetailLayout(
     list: List<String>,
     configuration: Configuration,
+    windowLayoutInfo: WindowLayoutInfo,
     scope: @Composable TwoPaneScope<String>.() -> Unit
 ) {
     val isSmallScreen = configuration.smallestScreenWidthDp < 580
@@ -84,7 +138,7 @@ fun ListDetailLayout(
                     navController.popBackStack()
                 }
             } else {
-                SplitLayout(twoPaneScope, selected) { selection ->
+                SplitLayout(twoPaneScope, windowLayoutInfo, selected) { selection ->
                     navController.navigate(route = NavGraph.Route.Detail.navigateRoute(selection)) {
                         popUpTo(NavGraph.Route.Detail.route) {
                             inclusive = true
@@ -114,16 +168,31 @@ private fun TwoPageLayout(
 @Composable
 private fun SplitLayout(
     twoPaneScope: TwoPaneScopeImpl<String>,
+    windowLayoutInfo: WindowLayoutInfo,
     selected: String?,
     onSelectionChange: (String) -> Unit
 ) {
     Row(Modifier.fillMaxWidth()) {
-        Box(modifier = Modifier.weight(1f)) {
+        val displayFeatureOffset = displayFeatureOffsetDp(LocalDensity.current, windowLayoutInfo)
+        Box(modifier = displayFeatureOffset?.let { Modifier.width(it) } ?: Modifier.weight(1f)) {
             twoPaneScope.list(twoPaneScope.items, onSelectionChange)
         }
         Box(modifier = Modifier.weight(1f)) {
             twoPaneScope.detail(selected ?: "Nothing selected")
         }
+    }
+}
+
+private fun displayFeatureOffsetDp(
+    density: Density,
+    windowLayoutInfo: WindowLayoutInfo
+): Dp? {
+    val displayFeatureOffset: Int? = windowLayoutInfo.displayFeatures
+        .filter { (it as? FoldingFeature)?.orientation == FoldingFeature.ORIENTATION_VERTICAL }
+        .map { it.bounds.left }
+        .firstOrNull()
+    return density.run {
+        displayFeatureOffset?.toDp()
     }
 }
 
