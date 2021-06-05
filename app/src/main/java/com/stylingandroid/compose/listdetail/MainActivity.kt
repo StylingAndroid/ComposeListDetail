@@ -151,7 +151,7 @@ fun ListDetailLayout(
 }
 
 @Composable
-private fun TwoPageLayout(
+internal fun TwoPageLayout(
     twoPaneScope: TwoPaneScopeImpl<String>,
     selected: String?,
     onSelectionChange: (String) -> Unit
@@ -166,7 +166,7 @@ private fun TwoPageLayout(
 }
 
 @Composable
-private fun SplitLayout(
+internal fun SplitLayout(
     twoPaneScope: TwoPaneScopeImpl<String>,
     windowLayoutInfo: WindowLayoutInfo,
     selected: String?,
@@ -229,7 +229,7 @@ interface TwoPaneScope<T> {
     fun Detail(newDetail: @Composable (T) -> Unit)
 }
 
-private class TwoPaneScopeImpl<T>(
+internal class TwoPaneScopeImpl<T>(
     val items: List<T>
 ) : TwoPaneScope<T> {
     override var list: @Composable (List<T>, (T) -> Unit) -> Unit = { _, _ -> }

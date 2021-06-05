@@ -17,7 +17,7 @@ pipeline {
 
       stage('Check') {
         steps {
-            sh "./gradlew detekt check ktlintCheck"
+            sh "./gradlew detekt check connectedAndroidTest ktlintCheck"
         }
       }
 

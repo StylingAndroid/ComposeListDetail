@@ -19,7 +19,7 @@ private val DarkColorPalette = darkColors(
 
 private val LightColorPalette = lightColors(
     primary = SaGreen,
-    primaryVariant = SaGreenLight,
+    primaryVariant = SaGreenDark,
     secondary = SaPurple,
     secondaryVariant = SaPurpleLight
 )
