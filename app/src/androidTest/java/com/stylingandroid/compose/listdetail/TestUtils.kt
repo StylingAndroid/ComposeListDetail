@@ -10,12 +10,29 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.hasAnyChild
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasNoClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.window.FoldingFeature
 import androidx.window.WindowLayoutInfo
 import com.stylingandroid.compose.listdetail.ui.theme.ComposeListDetailTheme
 
 internal val list = (1..10).map { "Item $it" }
+
+typealias MainActivityTestRule =
+    AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>
+
+internal fun MainActivityTestRule.onList() = onNode(hasAnyChild(hasClickAction()))
+
+internal fun MainActivityTestRule.onClickableTextItem(text: String) =
+    onNode(hasText(text) and hasClickAction())
+
+internal fun MainActivityTestRule.onStaticTextItem(text: String) =
+    onNode(hasText(text) and hasNoClickAction())
 
 @Composable
 internal fun TestUi(widthDp: Int, foldBounds: Rect? = null) =
